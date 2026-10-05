@@ -831,6 +831,14 @@ def _guarded_create(params: dict[str, Any] | None, **host: Any) -> str:
     from tools import kanban_tools as kt
 
     args = dict(params or {})
+    caller_body = str(args.get("body") or "")
+    reserved_markers = ("scope_admission_json:", "approval_record_json:")
+    if any(marker in caller_body for marker in reserved_markers):
+        return json.dumps({
+            "ok": False,
+            "created": False,
+            "error": "body contains reserved scope/approval contract marker",
+        }, ensure_ascii=False)
     # Only bind a selected request root from host-provided session identity;
     # model parameters/body cannot select or replace that root.
     session_id = host.get("session_id")
