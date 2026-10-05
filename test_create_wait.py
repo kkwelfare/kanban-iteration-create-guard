@@ -72,7 +72,10 @@ def valid_jev_decision_input() -> dict:
     fixture = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = fixture
     spec.loader.exec_module(fixture)
-    value = fixture._generic_input()
+    factory = getattr(fixture, "_generic_input", None) or getattr(fixture, "_decision_input", None)
+    if not callable(factory):
+        raise RuntimeError("JEV_CONTRACT_FIXTURE must expose _generic_input() or _decision_input()")
+    value = factory()
     now = datetime.now(timezone.utc)
     value["freshness"]["observed_at"] = (now - timedelta(minutes=1)).isoformat()
     value["freshness"]["valid_until"] = (now + timedelta(minutes=30)).isoformat()

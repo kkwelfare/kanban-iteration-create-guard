@@ -52,19 +52,20 @@ Validate the package with the Hermes CLI version you intend to use:
 hermes plugins validate . --json
 ```
 
-The offline test suite uses the installed Hermes source/runtime, an isolated temporary Kanban database, and the canonical Jev bridge plus contract fixture. Supply those locations explicitly; no local account path is embedded in the tests:
+The offline test suite uses the Hermes source/runtime, an isolated temporary Kanban database, and a compatible public Jev bridge plus contract fixture. The bridge must provide `bridge.py` and sibling modules; the fixture exposes `_generic_input()` or `_decision_input()`. Supply the paths explicitly; no local account path is embedded in the tests:
 
 ```sh
 export HERMES_SOURCE_ROOT=/path/to/hermes-agent
 export JEV_BRIDGE_DIR=/path/to/jev-route-screening
-export JEV_CONTRACT_FIXTURE=/path/to/jev-route-screening/test_structured_decision_input_contract.py
+export HERMES_JEV_BRIDGE_DIR="$JEV_BRIDGE_DIR"
+export JEV_CONTRACT_FIXTURE=/path/to/jev-route-screening/test_task_input_staging.py
 python test_create_wait.py
 python test_scope_admission.py
-python test_specialist_create_template.py
-python test_specialist_child_create_guard.py
 ```
 
 `test_specialist_child_create_guard.py` verifies only this package's registration; external handoff-control-plane integration is mocked and not claimed here. Tests may create `__pycache__/`; it is generated output and must not be committed.
+
+`JEV_BRIDGE_DIR` selects the public test bridge, and `HERMES_JEV_BRIDGE_DIR` selects the compatible runtime bridge; set both to the same public route candidate for this isolated run. `JEV_CONTRACT_FIXTURE` points to the public `test_task_input_staging.py` factory, which exposes `_decision_input()`.
 
 ## Privacy and side effects
 

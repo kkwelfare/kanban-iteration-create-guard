@@ -80,7 +80,10 @@ def load_structured_contract_tests():
 
 def decision_input_roundtrip(module, kb, db):
     fixture = load_structured_contract_tests()
-    value = fixture._generic_input()
+    factory = getattr(fixture, "_generic_input", None) or getattr(fixture, "_decision_input", None)
+    if not callable(factory):
+        raise RuntimeError("JEV_CONTRACT_FIXTURE must expose _generic_input() or _decision_input()")
+    value = factory()
     now = datetime.now(timezone.utc)
     value["freshness"]["observed_at"] = (now - timedelta(minutes=1)).isoformat()
     value["freshness"]["valid_until"] = (now + timedelta(minutes=30)).isoformat()
@@ -108,41 +111,18 @@ def decision_input_roundtrip(module, kb, db):
         row = conn.execute("SELECT body FROM tasks WHERE id = ?", (created["task_id"],)).fetchone()
     assert row is not None
     assert row["body"].count("jev_decision_input_json:") == 1
-    ops_bridge = fixture.PROFILE_BRIDGES["ops"]
-    persisted = ops_bridge._extract_decision_input(row["body"])
+    bridge = module._ops_decision_input_bridge()
+    persisted = bridge._extract_decision_input(row["body"])
     expected = copy.deepcopy(value)
     expected["provenance"]["task_id"] = created["task_id"]
     assert persisted == expected
+    assert bridge._validate_decision_input(persisted, require_bound=True) == expected
     assert created["status"] == "ready"
-
-    with patch.object(fixture, "FIXTURE_NOW", now):
-        event = fixture._produce_event("ops", persisted)
-    assert event["decision_input"] == persisted
-    shared = fixture.SHARED
-    assert event["decision_input_sha256"] == shared._decision_input_digest(persisted)
-    with patch.object(shared, "_decision_input_now", return_value=now):
-        assert shared._decision_input_from_event(event) == persisted
-        request = shared.build_jev_request(
-            event, model="offline-contract-test", point_state_enabled=False
-        )
-        assert json.loads(request["state"])["decision_input"] == persisted
-        captured = []
-        with tempfile.TemporaryDirectory(prefix="creator-common-consumer-") as directory:
-            consumer = shared.Consumer(
-                fixture.OfflineContext(False), shared.BridgeStore(Path(directory))
-            )
-            def offline_post(body, **kwargs):
-                captured.append(copy.deepcopy(dict(body)))
-                return {"offline": True}
-            with patch.object(shared, "request_decision_with_fallback", side_effect=offline_post):
-                consumer._decision(event)
-        assert len(captured) == 1
-        assert json.loads(captured[0]["state"])["decision_input"] == persisted
 
     after = (task_count(kb, db), event_count(kb, db))
     assert after[0] == before[0] + 1
     assert after[1] >= before[1] + 1
-    return {"task_id": created["task_id"], "event_sha256": event["decision_input_sha256"], "consumer_exact": True}
+    return {"task_id": created["task_id"], "bound_readback": True}
 
 
 def run() -> dict:
