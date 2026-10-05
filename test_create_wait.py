@@ -180,10 +180,24 @@ def run() -> dict:
 
             jev = run_jev_staging(module, kb, db)
             tasks_before_partial = task_count(kb, db)
+            # Native auto-subscription depends on host delivery context. Force
+            # the subscribed response only for this cleanup-failure fixture,
+            # so a CLI without a delivery binding exercises the same branch.
+            from tools import kanban_tools as kt
+            original_create = kt._handle_create
             original_remove = module._remove_auto_subscription
+            def subscribed_fixture(args):
+                payload = json.loads(original_create(args))
+                assert payload["ok"] is True
+                payload["subscribed"] = True
+                return json.dumps(payload)
+            kt._handle_create = subscribed_fixture
             module._remove_auto_subscription = lambda task_id, board: False
-            partial = json.loads(module._guarded_create(params(title="finalization failure")))
-            module._remove_auto_subscription = original_remove
+            try:
+                partial = json.loads(module._guarded_create(params(title="finalization failure")))
+            finally:
+                kt._handle_create = original_create
+                module._remove_auto_subscription = original_remove
             assert partial["ok"] is False
             assert partial["task_id"]
             assert partial["status"] == "blocked"
