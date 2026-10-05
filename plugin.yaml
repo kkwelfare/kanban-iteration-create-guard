@@ -1,0 +1,14 @@
+name: kanban-iteration-create-guard
+version: "1.0.0"
+description: "Guarded Kanban task creation and read-only task waiting, with optional Jev decision-input staging."
+author: kkwelfare
+license: MIT
+requires_hermes: ">=0.21.5"
+config_schema:
+  jev_bridge_dir:
+    type: str
+    default: ""
+    description: "Directory containing the compatible Jev route-screening bridge.py. May instead be set with HERMES_JEV_BRIDGE_DIR."
+provides_tools:
+  - kanban_create_guarded
+  - kanban_wait

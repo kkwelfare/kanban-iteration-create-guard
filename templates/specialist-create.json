@@ -1,0 +1,54 @@
+{
+  "title": "<required: task title>",
+  "assignee": "<required: registered profile>",
+  "body": "<required: bounded handoff and Route contract>",
+  "scope": {
+    "outcome_target": "<required>",
+    "exact_target_candidates": ["<absolute exact target path(s), or other canonical target identifier>"] ,
+    "action_mode": "<read_only|mutate|production>",
+    "allowed_actions": ["<explicit in-scope action>"],
+    "forbidden_actions": [],
+    "decision_points": [],
+    "completion_conditions": ["<observable acceptance condition>"],
+    "status": "<defined|needs_master>"
+  },
+  "skills": ["<required loop skill>", "<additional triggered skill if needed>"],
+  "decision_input": {
+    "schema_version": 1,
+    "scope": "<same admitted task scope, expressed for Jev>",
+    "objective": "<specific objective>",
+    "target_candidates": [],
+    "requested_outcome": "<requested worker outcome>",
+    "action_mode": "<read_only|mutate|production>",
+    "allowed_actions": ["<explicit allowed action>"],
+    "forbidden_actions": [],
+    "decision_points": ["<task-specific evidence, bounded fallback/stop, and completion judgment>"] ,
+    "freshness": {
+      "status": "<fresh|not_time_sensitive>",
+      "observed_at": "<actual timezone-aware observation timestamp>",
+      "valid_until": null,
+      "rule": "<actual freshness rule; preserve independent packet windows and caps>"
+    },
+    "deduplication": {
+      "status": "<checked|not_applicable>",
+      "checked_at": "<actual timezone-aware check timestamp, required when checked>",
+      "basis": "<what was actually compared, or why not applicable>"
+    },
+    "baseline": {"checks": ["<existing test/build/readback and representative verification>"]},
+    "completion_conditions": ["<same observable acceptance condition>"],
+    "prior_context": {"<key>": "<verified relevant context>"},
+    "signals": [],
+    "feedback": [],
+    "output_requirements": {"format": "<requested format>", "language": "<requested language>"},
+    "uncertainty": [],
+    "provenance": {
+      "task_id": "<bound by kanban_create_guarded after creation; do not invent>",
+      "source": "<actual source of this decision input>",
+      "captured_at": "<actual timezone-aware capture timestamp>",
+      "source_references": ["<actual reference; no invented IDs or hashes>"]
+    },
+    "domain_extension": null
+  },
+  "workspace_kind": "scratch",
+  "subscribe_on_completion": false
+}
