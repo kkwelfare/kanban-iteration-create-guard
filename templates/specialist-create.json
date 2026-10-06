@@ -13,6 +13,7 @@
     "status": "<defined|needs_master>"
   },
   "skills": ["<required loop skill>", "<additional triggered skill if needed>"],
+  "artifact_outputs": [],
   "decision_input": {
     "schema_version": 1,
     "scope": "<same admitted task scope, expressed for Jev>",

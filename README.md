@@ -37,7 +37,7 @@ For a Jev-required task, the wrapper creates it blocked, binds `provenance.task_
 
 ## Tools
 
-- `kanban_create_guarded`: wraps native Kanban creation and applies its declared scope-admission rules; it also preserves the docs live-browser contract and supports optional Jev structured-input staging when the target profile requires it.
+- `kanban_create_guarded`: wraps native Kanban creation and applies its declared scope-admission rules; it also preserves the docs live-browser contract, supports optional Jev structured-input staging when the target profile requires it, and adds a read-only docs artifact-completion readiness packet to eligible docs tasks. The packet is a requirements handoff, not QA, receipts, or a pass claim. Docs completion requirements are resolved from the active `docs` profile via Hermes `get_profile_dir("docs")`; no profile home path is hardcoded. Docs production/mutate tasks declare each final output in `artifact_outputs` as `{path, format}`; the wrapper validates output suffix/format and reads consumer/helper declarations without importing the consumer. Read-only tasks with no declared outputs and non-docs tasks preserve their existing route. The offline regression test uses a synthetic consumer fixture and does not create live tasks.
 - `kanban_wait`: read-only wait for one explicit task ID, ignoring unrelated tasks.
 
 The Jev decision input is advisory context, not authorization or final judgment. The tool wrapper is cooperative coverage only; CLI, dashboard, direct DB, and other callers are outside it and retain their own validation paths.

@@ -826,6 +826,107 @@ def _finish_jev_create(
     return json.dumps(payload, ensure_ascii=False)
 
 
+def _docs_artifact_completion_packet(args: dict[str, Any]) -> tuple[str | None, str | None]:
+    """Build a read-only docs completion handoff from the docs profile install.
+
+    The docs consumer is never imported. Its target suffixes and helper rules are
+    read as AST literals to avoid registration/runtime side effects. The path is
+    resolved through Hermes' existing profile-directory API, not a user-specific
+    home directory. This is a requirements handoff only, not QA or a receipt.
+    """
+    if (str(args.get("assignee") or "").strip().lower() != "docs"
+            and str(args.get("work_class") or "").strip().lower() != "docs"):
+        return None, None
+    scope = args.get("scope")
+    action_mode = str(scope.get("action_mode") or "").strip().lower() if isinstance(scope, dict) else ""
+    outputs = args.get("artifact_outputs")
+    if action_mode not in {"mutate", "production"} and not outputs:
+        return None, None
+    if not isinstance(outputs, list) or not outputs:
+        return None, (
+            "docs production/mutate tasks must declare artifact_outputs as a non-empty list "
+            "of {path, format} objects before creation; read_only tasks do not declare deliverables"
+        )
+
+    try:
+        from hermes_cli.profiles import get_profile_dir
+
+        consumer = Path(get_profile_dir("docs")) / "plugins" / "docs-final-output-completion-guard" / "__init__.py"
+        tree = ast.parse(consumer.read_text(encoding="utf-8"), filename=str(consumer))
+        target_node = next(
+            node for node in ast.walk(tree)
+            if isinstance(node, ast.Assign)
+            and any(isinstance(target, ast.Name) and target.id == "target_suffixes" for target in node.targets)
+        )
+        suffixes = ast.literal_eval(target_node.value)
+        if not isinstance(suffixes, (set, frozenset)) or not all(isinstance(value, str) for value in suffixes):
+            raise ValueError("target_suffixes is not a literal string set")
+        common_path = consumer.parent / "quality_rules" / "common.py"
+        common_tree = ast.parse(common_path.read_text(encoding="utf-8"), filename=str(common_path))
+        quality_node = next(
+            node for node in ast.walk(common_tree)
+            if isinstance(node, ast.Assign)
+            and any(isinstance(target, ast.Name) and target.id == "TARGET_SUFFIXES" for target in node.targets)
+        )
+        quality_value = quality_node.value
+        if (isinstance(quality_value, ast.Call) and isinstance(quality_value.func, ast.Name)
+                and quality_value.func.id == "frozenset" and len(quality_value.args) == 1):
+            quality_suffixes = frozenset(ast.literal_eval(quality_value.args[0]))
+        else:
+            quality_suffixes = ast.literal_eval(quality_value)
+        if not isinstance(quality_suffixes, (set, frozenset)) or not all(isinstance(value, str) for value in quality_suffixes):
+            raise ValueError("quality target suffixes are not a literal string set")
+    except Exception as exc:
+        return None, f"docs completion consumer requirements are unavailable or unparseable ({type(exc).__name__}); task not created"
+
+    normalized: list[dict[str, str]] = []
+    for index, value in enumerate(outputs):
+        if not isinstance(value, dict) or set(value) != {"path", "format"}:
+            return None, f"artifact_outputs[{index}] must contain exactly path and format"
+        path, output_format = value.get("path"), value.get("format")
+        if not isinstance(path, str) or not path.strip() or not Path(path).is_absolute():
+            return None, f"artifact_outputs[{index}].path must be a non-empty absolute output path"
+        if not isinstance(output_format, str) or not output_format.strip():
+            return None, f"artifact_outputs[{index}].format must be a non-empty output format"
+        suffix = Path(path).suffix.lower()
+        if suffix and output_format.strip().lower().lstrip(".") != suffix.lstrip("."):
+            return None, f"artifact_outputs[{index}].format does not match its output path suffix"
+        normalized.append({"path": str(Path(path)), "format": output_format.strip().lower().lstrip(".")})
+
+    targets = [item for item in normalized if Path(item["path"]).suffix.lower() in suffixes]
+    if not targets:
+        return None, None
+    quality_gap = sorted({Path(item["path"]).suffix.lower() for item in targets} - quality_suffixes)
+    unsupported = sorted({Path(item["path"]).suffix.lower() for item in targets} - {".pdf", ".png", ".jpg", ".jpeg", ".webp", ".svg", ".html", ".htm", ".pptx", ".docx", ".xlsx", ".odt", ".ods"})
+    consumer_text = consumer.read_text(encoding="utf-8")
+    required_tokens = ("final_output_filter", "artifact_quality", "finalization_manifest", "receiver_receipt", "ordinary-docx-baseline-1")
+    if any(token not in consumer_text for token in required_tokens):
+        return None, "docs completion consumer structure changed; requirements adapter needs review; task not created"
+    root = str(consumer.parent)
+    lines = [
+        "docs artifact completion readiness packet (requirements handoff; not QA or a passing evidence receipt)",
+        "declared outputs: " + json.dumps(normalized, ensure_ascii=False, sort_keys=True),
+        "consumer sha256: " + hashlib.sha256(consumer.read_bytes()).hexdigest(),
+        "helper requirements source sha256: " + hashlib.sha256(common_path.read_bytes()).hexdigest(),
+        "canonical final-output command: python3 " + root + "/check_docs_artifact.py --artifact <actual-output-path> --receipt <actual-final-output-receipt-path>",
+        "strict quality command: python3 " + root + "/check_docs_artifact_quality.py --contract <actual-contract-path> --receipt <actual-quality-receipt-path>; use only genuinely applicable evidence",
+        "finalization helper: python3 " + root + "/scripts/prepare_finalization.py --help; provide the actual distinct stored receiver copy, not an invented readback",
+        "ordinary DOCX exception: schema_version ordinary-docx-baseline-1 uses scripts/prepare_ordinary_docx_baseline.py and its real source/render/receiver evidence; strict quality receipts are not mandatory for that supported branch",
+        "consumer: " + str(consumer) + ", current source parsed read-only",
+        "target selection: completion guard target_suffixes; declared artifact_outputs paths were matched by output suffix, never source suffix",
+        "completion metadata must include metadata.verification.final_output_filter.receipts (canonical checker receipts covering every delivered artifact); use the existing final-output checker and read its receipt back",
+        "HTML/HTM are completion-guard targets; the artifact-quality helper also lists HTML/HTM as quality targets, while its HTML-to-PDF rule validates a delivered PDF bound to one declared HTML source and does not by itself establish a standalone HTML visual-quality pass",
+        "HTML/HTM target formats are in the consumer target list; the existing consumer additionally requires metadata.verification.artifact_quality with a required target contract, matching delivered artifacts, quality receipts covering canonical quality targets, and a finalization_manifest path plus receiver_receipt; satisfy only the applicable canonical checker path and do not claim unsupported checks passed",
+        "worker completion metadata should preserve the actual contract/artifact_kind/artifacts, final-output receipt handles, artifact-quality contract and receipt handles, and finalization manifest/receiver receipt handles required by the current consumer; generate/read back receipts during production, not at task creation",
+        "creation preflight does not run checkers, create receipts, or certify artifact quality; do not add QA workers, paid processing, or checks outside the approved baseline",
+    ]
+    if quality_gap:
+        lines.append("completion guard targets without an existing docs artifact-quality target rule in current consumer helpers: " + ", ".join(quality_gap) + "; report the limitation, do not claim an artifact-quality pass, and use a supported declared deliverable if applicable")
+    if unsupported:
+        lines.append("consumer target suffixes without a confirmed existing completion route in this handoff: " + ", ".join(unsupported) + "; do not state those formats are supported")
+    return "\n".join(lines), None
+
+
 def _guarded_create(params: dict[str, Any] | None, **host: Any) -> str:
     """Create a Kanban card, enforcing the live-browser contract when selected."""
     from tools import kanban_tools as kt
@@ -935,6 +1036,15 @@ def _guarded_create(params: dict[str, Any] | None, **host: Any) -> str:
 
     work_class = str(args.pop("work_class", "") or "").strip().lower()
     execution_class = str(args.pop("execution_class", "") or "").strip().lower()
+    outputs = args.pop("artifact_outputs", None)
+    completion_packet, completion_error = _docs_artifact_completion_packet({
+        **args, "scope": scope, "work_class": work_class, "artifact_outputs": outputs,
+    })
+    if completion_error:
+        return json.dumps({"ok": False, "created": False, "error": completion_error}, ensure_ascii=False)
+    if completion_packet:
+        args["body"] = str(args.get("body") or "").rstrip() + "\n\n" + completion_packet + "\n"
+
     is_docs_live_browser = work_class == "docs" and execution_class == "live_browser"
     if not is_docs_live_browser:
         create_result = _create_without_default_completion_notice(args, subscribe_on_completion)
@@ -1061,7 +1171,7 @@ def register(ctx):
         toolset="kanban",
         schema={
             "name": "kanban_create_guarded",
-            "description": "Create a Kanban card. For docs live-browser cards, enforce docs-production-loop, max_retries=1, and an iteration milestone contract. For assignees with an active Jev producer hook requiring structured input, create blocked, bind and persist the input to the generated task ID, verify the stored marker with the canonical bridge, then unblock; missing or invalid input stays blocked. Other profiles retain native creation behavior.",
+            "description": "Create a Kanban card. For docs production/mutate tasks, require explicit artifact_outputs and add the current read-only completion consumer requirements to the task body before creation; this is a requirements handoff, not QA or a receipt. For docs live-browser cards, enforce docs-production-loop, max_retries=1, and an iteration milestone contract. For assignees with an active Jev producer hook requiring structured input, create blocked, bind and persist the input to the generated task ID, verify the stored marker with the canonical bridge, then unblock; missing or invalid input stays blocked. Other profiles retain native creation behavior.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -1093,6 +1203,19 @@ def register(ctx):
                         "description": "Structured inherited approval for exactly this stated scope. Requires approved_by, source_platform, source_message_id, and approved_scope."
                     },
                     "work_class": {"type": "string", "description": "Use docs for docs-owned work."},
+                    "artifact_outputs": {
+                        "type": "array",
+                        "description": "For docs mutate/production work, declare each deliverable output as {path, format}; matching is by output suffix, not source suffix. Required before task creation for docs production/mutate; omitted for read_only and non-docs tasks.",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "path": {"type": "string", "minLength": 1, "pattern": "^/"},
+                                "format": {"type": "string", "minLength": 1}
+                            },
+                            "required": ["path", "format"],
+                            "additionalProperties": False
+                        }
+                    },
                     "execution_class": {"type": "string", "description": "Use live_browser only for serial authenticated/browser work."},
                     "subscribe_on_completion": {"type": "boolean", "description": "Set true only when an asynchronous or user-waiting card needs a terminal completion notification. Defaults to false for same-turn default sharing."},
                     "parents": {"type": "array", "items": {"type": "string"}},

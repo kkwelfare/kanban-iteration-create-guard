@@ -7,3 +7,11 @@ Jev必須profileでは `tool_describe` で登録schemaを確認し、作成は�
 成功後、返却された `jev_input.persisted`、`jev_input.task_id_bound`、`jev_input.canonical_readback_validated` が全て厳密に `true` であることを確認し、正本のtask record/bodyをreadbackして担当、skill、scope、保存状態を確認する。readyでactive runが無いカードだけdispatchする。すでにrunningなら二重dispatchしない。flag欠落、入力error、readback不一致、blocked状態ならdispatch停止。同じカードだけをsupported routeと既存retry/breaker/approval範囲内で確認する。新規カード、通常create、breaker回避へ切り替えない。
 
 Jevの役割は助言的な事前分類であり、許可・停止・最終判断のauthorityではない。scope admission、approval、loop上のsafety境界と権限を置換しない。
+
+## docs成果物の完了要件の受渡し
+
+担当がdocs、または `work_class=docs` の制作・変更では `artifact_outputs` に成果物ごとの `{path, format}` を宣言する。テンプレートの空配列を実際の最終出力の絶対パスと形式で埋める。素材の拡張子を納品形式として推定しない。read_onlyで成果物宣言がない場合と他profileは従来経路を保つ。read_onlyでも明示した成果物にはpacketを付ける。
+
+wrapperはdocs完了consumerの対象拡張子とquality helperの対象拡張子を副作用のないAST読取りで参照し、宣言した出力、consumer/helperのhash、現在のmetadata要求とcanonical checker/helperの利用手順を「docs artifact completion readiness packet」としてbodyへ渡す。consumerは `get_profile_dir("docs")` でprofile-localに解決し、importしない。入力不足・不一致・consumer読取失敗では起票前に具体的なerrorを返す。全ての品質ルールを自動解釈するAPIではないため、consumerの構造・要求変更時にはadapterを確認する。
+
+packetは要件伝達であり、QA実施やreceipt生成、品質合格の証拠ではない。production時に実際の `metadata.verification.final_output_filter.receipts`、適用する `artifact_quality` contract/receipts/finalization_manifest/receiverの証拠を用意する。通常DOCXは `ordinary-docx-baseline-1` の既存経路を使え、strict quality receiptsを一律に追加しない。HTML/HTMのHTML-to-PDFルールはPDF向けであり、HTML単体の視覚品質合格を保証しない。未対応をpassとせず、納品形式の変更も無断でしない。追加QA、追加worker、有料処理、承認外のbaseline拡張をpacketから自動追加しない。
