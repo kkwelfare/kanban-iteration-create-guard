@@ -944,31 +944,54 @@ def _guarded_create(params: dict[str, Any] | None, **host: Any) -> str:
     # model parameters/body cannot select or replace that root.
     session_id = host.get("session_id")
     if isinstance(session_id, str) and session_id.strip():
-        try:
-            import importlib.util
-            bridge_root = os.environ.get("HERMES_JEV_BRIDGE_DIR", "").strip()
-            plugin_file = Path(__file__).resolve().parents[1] / "jev-route-screening" / "request_goals.py"
-            if bridge_root and plugin_file.is_file():
-                spec = importlib.util.spec_from_file_location("_jev_request_goal_guard", plugin_file)
-                module = importlib.util.module_from_spec(spec)
-                assert spec and spec.loader
+        import importlib.util
+        bridge_root = os.environ.get("HERMES_JEV_BRIDGE_DIR", "").strip()
+        plugin_file = Path(__file__).resolve().parents[1] / "jev-route-screening" / "request_goals.py"
+        reference_path = Path(bridge_root) / "request-goals.jsonl" if bridge_root else None
+        # No configured/persisted host reference retains the legacy create path.
+        if reference_path is not None and (reference_path.exists() or plugin_file.is_file()):
+            spec = importlib.util.spec_from_file_location("_jev_request_goal_guard", plugin_file)
+            if spec is None or spec.loader is None:
+                return json.dumps({"ok": False, "created": False,
+                    "error": "host-selected request goal reference cannot be loaded; task not created"}, ensure_ascii=False)
+            module = importlib.util.module_from_spec(spec)
+            try:
                 spec.loader.exec_module(module)
-                selected = module.RequestGoalStore(Path(bridge_root) / "request-goals.jsonl").select_for_session(session_id)
-                if selected:
-                    body = str(args.get("body") or "")
-                    marker = "request_goal_ref_json:"
-                    if marker in body:
+            except (ImportError, OSError, UnicodeError, ValueError, TypeError, AttributeError) as exc:
+                return json.dumps({"ok": False, "created": False,
+                    "error": f"host-selected request goal reference cannot be loaded; task not created: {type(exc).__name__}"}, ensure_ascii=False)
+            try:
+                store = module.RequestGoalStore(reference_path)
+                rows = store._rows()
+                has_session_selection = any(
+                    row.get("kind") == "selection"
+                    and row.get("identity", {}).get("session_id") == session_id
+                    for row in rows
+                )
+                selected = store.select_for_session(session_id)
+            except (OSError, UnicodeError, json.JSONDecodeError, ValueError, TypeError,
+                    KeyError, AttributeError, module.GoalError) as exc:
+                return json.dumps({"ok": False, "created": False,
+                    "error": f"host-selected request goal reference is unreadable or invalid; task not created: {type(exc).__name__}"}, ensure_ascii=False)
+            if has_session_selection and selected is None:
+                return json.dumps({"ok": False, "created": False,
+                    "error": "host-selected request goal reference is invalid; task not created"}, ensure_ascii=False)
+            if selected:
+                body = str(args.get("body") or "")
+                marker = "request_goal_ref_json:"
+                if marker in body:
+                    try:
                         raw = body.split(marker, 1)[1].lstrip().splitlines()[0]
                         requested = json.loads(raw)
-                        if requested.get("root_id") != selected["root_id"]:
-                            return json.dumps({"ok": False, "created": False,
-                                "error": "request goal reference cannot replace the host-selected root"})
-                    else:
-                        args["body"] = body.rstrip() + "\n\nrequest_goal_ref_json: " + json.dumps(
-                            {"root_id": selected["root_id"]}, separators=(",", ":")) + "\n"
-        except Exception:
-            # Unknown/unavailable host binding preserves the legacy unbound path.
-            pass
+                    except (IndexError, json.JSONDecodeError) as exc:
+                        return json.dumps({"ok": False, "created": False,
+                            "error": f"request goal reference in body is invalid; task not created: {type(exc).__name__}"}, ensure_ascii=False)
+                    if not isinstance(requested, dict) or requested.get("root_id") != selected["root_id"]:
+                        return json.dumps({"ok": False, "created": False,
+                            "error": "request goal reference cannot replace the host-selected root"})
+                else:
+                    args["body"] = body.rstrip() + "\n\nrequest_goal_ref_json: " + json.dumps(
+                        {"root_id": selected["root_id"]}, separators=(",", ":")) + "\n"
     if "jev_decision_input_json:" in str(args.get("body") or ""):
         return json.dumps({"ok": False, "error": "body contains reserved decision_input marker"}, ensure_ascii=False)
     decision_input_present = "decision_input" in args
