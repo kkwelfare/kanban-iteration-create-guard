@@ -1,5 +1,21 @@
 # kanban-iteration-create-guard
 
+## Public quick start
+
+**What it is:** A Hermes Agent plugin that guards selected Kanban task creation and provides read-only waiting.
+**Who it is for:** Hermes operators and workers that create Kanban tasks through the declared guarded tool.
+**Requirements:** Hermes Agent `>=0.21.5` (declared in `plugin.yaml`); no Python dependencies are declared. The Jev bridge is optional except for profiles whose active producer contract requires structured `decision_input`; configure `jev_bridge_dir` or `HERMES_JEV_BRIDGE_DIR` as described below. The plugin itself makes no network calls or telemetry requests.
+
+```sh
+hermes plugins install kkwelfare/kanban-iteration-create-guard --no-enable
+hermes plugins enable kanban-iteration-create-guard
+```
+
+**Minimal use:** call `kanban_create_guarded` with a task `title` and `assignee`; add the full `decision_input` when the target profile's active Jev producer contract requires it. The wrapper's limitations and task-creation behavior are described below.
+
+License: [MIT](LICENSE).
+
+
 Guarded Kanban task creation and read-only task waiting as a Hermes native Python plugin. The wrapper covers model calls to its own tool only; it is not a universal authorization boundary and does not replace Kanban's canonical validation, approvals, or task state.
 
 ## Requirements and compatibility
