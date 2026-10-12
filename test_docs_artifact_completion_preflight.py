@@ -79,6 +79,37 @@ def run() -> dict[str, bool]:
                 "artifact_outputs": [{"path": "/tmp/final/index.html", "format": "pdf"}],
             })[1]
 
+            # Packet lines are joined with real newlines, not a literal backslash-n.
+            assert "\n" in packet and "\\n" not in packet
+
+            # CMS prose-fragment route: opt-in, requires exact scope metadata and
+            # a consumer that declares the fragment contract.
+            fragment_args = {
+                "work_class": "docs", "scope": scope,
+                "artifact_outputs": [{"path": "/tmp/final/fragment.html", "format": "html"}],
+                "artifact_kind": "cms-prose-fragment", "artifact_scope": "text-nodes-only",
+                "fragment_route": "cms_prose_fragment",
+            }
+            no_contract, no_contract_error = guard._docs_artifact_completion_packet(fragment_args)
+            assert no_contract is None and "ordinary-html-fragment-baseline-1" in no_contract_error
+            consumer.write_text(consumer.read_text(encoding="utf-8")
+                                + "fragment = 'ordinary-html-fragment-baseline-1'\n", encoding="utf-8")
+            fragment_packet, fragment_error = guard._docs_artifact_completion_packet(fragment_args)
+            assert fragment_error is None and "ROUTE: explicit CMS prose-fragment" in fragment_packet
+            assert "ordinary-html-fragment-baseline-1" in fragment_packet
+            wrong_scope = dict(fragment_args, artifact_scope="full-page")
+            assert "requires artifact_kind" in guard._docs_artifact_completion_packet(wrong_scope)[1]
+            two_outputs = dict(fragment_args, artifact_outputs=[
+                {"path": "/tmp/final/a.html", "format": "html"},
+                {"path": "/tmp/final/b.html", "format": "html"},
+            ])
+            assert "exactly one HTML output" in guard._docs_artifact_completion_packet(two_outputs)[1]
+            plain = guard._docs_artifact_completion_packet({
+                "work_class": "docs", "scope": scope,
+                "artifact_outputs": [{"path": "/tmp/final/index.html", "format": "html"}],
+            })[0]
+            assert "CMS prose-fragment" not in plain
+
             # Normal create route: output declarations are consumed locally and
             # only the readiness packet is appended before the native handler.
             tools = types.ModuleType("tools")

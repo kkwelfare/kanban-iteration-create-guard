@@ -924,6 +924,23 @@ def _docs_artifact_completion_packet(args: dict[str, Any]) -> tuple[str | None, 
         lines.append("completion guard targets without an existing docs artifact-quality target rule in current consumer helpers: " + ", ".join(quality_gap) + "; report the limitation, do not claim an artifact-quality pass, and use a supported declared deliverable if applicable")
     if unsupported:
         lines.append("consumer target suffixes without a confirmed existing completion route in this handoff: " + ", ".join(unsupported) + "; do not state those formats are supported")
+    # Source fragments are not standalone HTML deliverables. The route is opt-in
+    # and bound to explicit scope metadata; suffix-only HTML declarations stay strict.
+    fragment = args.get("artifact_kind") == "cms-prose-fragment" or args.get("fragment_route") == "cms_prose_fragment"
+    if fragment:
+        if (args.get("artifact_scope") != "text-nodes-only" or len(normalized) != 1
+                or Path(normalized[0]["path"]).suffix.lower() not in {".html", ".htm"}):
+            return None, "CMS prose-fragment route requires artifact_kind=cms-prose-fragment, artifact_scope=text-nodes-only, and exactly one HTML output"
+        if "ordinary-html-fragment-baseline-1" not in consumer_text:
+            return None, "docs completion consumer does not declare ordinary-html-fragment-baseline-1; CMS prose-fragment task not created"
+        lines.extend([
+            "ROUTE: explicit CMS prose-fragment; do not treat the source/output handle as a standalone HTML delivery artifact",
+            "ordinary CMS prose-fragment route: use scripts/prepare_ordinary_html_fragment_baseline.py to bind actual source/target/change/final-output/receiver evidence",
+            "completion contract: ordinary-html-fragment-baseline-1; worker metadata.verification.artifact_quality must set artifact_kind=cms-prose-fragment and contract to the route contract",
+            "worker baseline binds HTML source/target SHA-256 handles, exact text-only change-list reproduction, parser-verified unchanged markup/attributes/URLs/media, canonical final-output pass bound to the target, and task/run/target identity",
+            "worker cannot assert receiver delivery; the task owner must attach the actual CMS readback (raw content/status/target id) to the finalization packet and complete exact-content receiver validation",
+            "no browser/render/PDF/HTML-to-PDF/visual-quality receipt is required for a non-interactive CMS prose fragment; do not use this exception for full documents, interactive markup, new tags/attributes, or URL/media changes",
+        ])
     return "\n".join(lines), None
 
 
