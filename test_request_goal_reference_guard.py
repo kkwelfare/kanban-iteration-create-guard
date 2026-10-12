@@ -12,6 +12,44 @@ import pytest
 
 PLUGIN = Path(__file__).with_name("__init__.py")
 
+# Minimal stand-in for jev-route-screening/request_goals.py so these tests do not
+# depend on a sibling checkout. It mirrors only the surface the guard uses:
+# RequestGoalStore(path)._rows(), .select_for_session(session_id), GoalError.
+REQUEST_GOALS_STUB = """
+import json
+from pathlib import Path
+
+
+class GoalError(ValueError):
+    pass
+
+
+class RequestGoalStore:
+    def __init__(self, path):
+        self.path = Path(path)
+
+    def _rows(self):
+        if not self.path.exists():
+            return []
+        rows = []
+        for line in self.path.read_text(encoding="utf-8").splitlines():
+            if line.strip():
+                rows.append(json.loads(line))
+        return rows
+
+    def select_for_session(self, session_id):
+        rows = self._rows()
+        selections = [row for row in rows if row.get("kind") == "selection"
+                      and row.get("identity", {}).get("session_id") == session_id]
+        if not selections:
+            return None
+        root_id = selections[-1]["root_id"]
+        roots = [row for row in rows if row.get("kind") == "root" and row.get("root_id") == root_id]
+        if not roots or roots[-1].get("identity", {}).get("session_id") != session_id:
+            return None
+        return roots[-1]
+"""
+
 
 def load_plugin():
     spec = importlib.util.spec_from_file_location("request_goal_reference_guard_fixture", PLUGIN)
@@ -40,8 +78,7 @@ def call_create(module, monkeypatch, tmp_path, *, reference=None):
     repo_root = tmp_path / "fake-root"
     expected_plugin = repo_root / "jev-route-screening" / "request_goals.py"
     expected_plugin.parent.mkdir(parents=True)
-    source = Path(__file__).resolve().parents[1] / "jev-route-screening-public" / "request_goals.py"
-    expected_plugin.write_bytes(source.read_bytes())
+    expected_plugin.write_text(REQUEST_GOALS_STUB, encoding="utf-8")
     fake_file = repo_root / "kanban-iteration-create-guard" / "__init__.py"
     fake_file.parent.mkdir(parents=True)
     fake_file.write_text("# fixture", encoding="utf-8")
@@ -86,8 +123,7 @@ def test_unreadable_selection_reference_returns_error_without_creating(tmp_path,
     repo_root = tmp_path / "fake-root"
     plugin_file = repo_root / "jev-route-screening" / "request_goals.py"
     plugin_file.parent.mkdir(parents=True)
-    source = Path(__file__).resolve().parents[1] / "jev-route-screening-public" / "request_goals.py"
-    plugin_file.write_bytes(source.read_bytes())
+    plugin_file.write_text(REQUEST_GOALS_STUB, encoding="utf-8")
     fake_file = repo_root / "kanban-iteration-create-guard" / "__init__.py"
     fake_file.parent.mkdir(parents=True)
     fake_file.write_text("# fixture", encoding="utf-8")

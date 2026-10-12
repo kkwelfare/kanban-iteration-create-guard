@@ -33,10 +33,36 @@ def _hermes_source_root() -> str:
         return str(base / "hermes-agent")
 
 
+_REEXEC_MARKER = "KANBAN_WAIT_REEXECUTED"
+
+
+def _ensure_hermes_interpreter(source_root: str) -> None:
+    """Re-run under the Hermes venv when this interpreter lacks Hermes deps.
+
+    A bare ``python3`` on PATH may be a different interpreter than the one
+    Hermes is installed into; the Kanban DB layer then fails on missing
+    third-party modules. Re-exec once into ``<source>/venv`` (or ``.venv``).
+    """
+    try:
+        importlib.import_module("hermes_cli.kanban_db")
+        return
+    except ImportError:
+        if os.environ.get(_REEXEC_MARKER):
+            raise
+    current = Path(sys.executable).resolve()
+    for name in ("venv", ".venv"):
+        candidate = Path(source_root) / name / "bin" / "python"
+        if candidate.is_file() and os.access(candidate, os.X_OK) and candidate.resolve() != current:
+            env = dict(os.environ, **{_REEXEC_MARKER: "1"})
+            os.execve(str(candidate), [str(candidate), str(Path(__file__).resolve()), *sys.argv[1:]], env)
+    importlib.import_module("hermes_cli.kanban_db")
+
+
 def _load_plugin():
     source_root = _hermes_source_root()
     if source_root not in sys.path:
         sys.path.insert(0, source_root)
+    _ensure_hermes_interpreter(source_root)
     spec = importlib.util.spec_from_file_location("kanban_iteration_create_guard_cli", PLUGIN_INIT)
     if spec is None or spec.loader is None:
         raise RuntimeError(f"could not load {PLUGIN_INIT}")
