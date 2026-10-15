@@ -27,7 +27,7 @@
     "freshness": {
       "status": "<fresh|not_time_sensitive>",
       "observed_at": "<actual timezone-aware observation timestamp>",
-      "valid_until": null,
+      "valid_until": "<required timezone-aware timestamp when status=fresh; null only when status=not_time_sensitive>",
       "rule": "<actual freshness rule; preserve independent packet windows and caps>"
     },
     "deduplication": {

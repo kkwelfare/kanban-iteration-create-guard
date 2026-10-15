@@ -1,6 +1,6 @@
 # `kanban_create_guarded` specialist起票テンプレート
 
-完全な登録済みtool payloadは `templates/specialist-create.json` をコピーして準備する。placeholderを実際に確認・判断した値で全て置き換え、scope admissionと `decision_input` をそれぞれのcanonical contractに照らす。`scope.status`、`freshness.observed_at`、`deduplication.checked_at`（statusがcheckedの場合）、`provenance.captured_at` を省略しない。時刻・根拠・source referenceを捏造しない。未解決の判断があるscopeは `needs_master` とし、起票せずmaster判断へ戻す。
+完全な登録済みtool payloadは `templates/specialist-create.json` をコピーして準備する。placeholderを実際に確認・判断した値で全て置き換え、scope admissionと `decision_input` をそれぞれのcanonical contractに照らす。`scope.status`、`freshness.observed_at`、`deduplication.checked_at`（statusがcheckedの場合）、`provenance.captured_at` を省略しない。`freshness.status=fresh` のときは `freshness.valid_until` にタイムゾーン付きの時刻を入れる。`null` にできるのは `not_time_sensitive` のときだけで、`fresh` で `null` にするとカードはblockedのまま残る。時刻・根拠・source referenceを捏造しない。未解決の判断があるscopeは `needs_master` とし、起票せずmaster判断へ戻す。
 
 Jev必須profileでは `tool_describe` で登録schemaを確認し、作成は必ず `tool_call` の `kanban_create_guarded` で行う。通常create/CLIや直接plugin関数へ切り替えない。wrapperが作成中に `provenance.task_id` を実タスクIDへ束縛し、blocked状態で保存、canonical readback検証後にunblockする。templateのplaceholderを残した入力は実行不可。Jev bridgeは `plugins.entries.kanban-iteration-create-guard.settings.jev_bridge_dir` または `HERMES_JEV_BRIDGE_DIR` で設定する。設定先のJev packageは `bridge.py` と必要なsibling modulesを含み、canonical `_validate_decision_input` / `_extract_decision_input` APIを提供すること。Hermesのprofileごとに設定し、明示設定が無い・API不一致ならfail closedする。scopeとdecision inputは別々に検証する。
 
